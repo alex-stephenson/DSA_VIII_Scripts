@@ -67,12 +67,22 @@ if (access_from_server == TRUE) {
 
 ## example date "2023-10-08T07:56:32"
 
-date_to_filter = readline("select the date to filter for in YYYY-MM_DD format: ")
+dynamic_date <- FALSE
 
-df <- df %>% 
-  left_join(district_file, by = c("idp_code")) %>%
-  mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
-  filter(submission_date == date_to_filter)
+if (dynamic_date == TRUE) {
+  
+  date_to_filter = readline("select the date to filter for in YYYY-MM_DD format: ")
+  
+  df <- df %>% 
+    left_join(district_file, by = c("idp_code")) %>%
+    mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
+    filter(submission_date == date_to_filter) 
+} else {
+  df <- df %>% 
+    left_join(district_file, by = c("idp_code")) %>%
+    mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
+    filter(submission_date == "2023-10-08") 
+}
 
 ## add if statement saying error if df empty
 
@@ -142,7 +152,9 @@ clogs_length <- df %>%
     log_name = "duration_log",
     lower_bound = 30,
     higher_bound = 90
-  )
+  ) %>%
+  pluck('duration_log')
+  
 
 #CHECK 3 - DUPLICATED KI
 clogs_duplicate_ki <- df %>%
@@ -150,26 +162,30 @@ clogs_duplicate_ki <- df %>%
   columns_to_check = c("ki_contact"),
   log_name = "duplicate phone",
   uuid_column = "_uuid"
-) 
+) %>%
+  pluck('duplicate phone')
 
 #CHECK 4 - DUPLICATED UUID
 clogs_duplicated_uuid <- df %>%
-  check_duplicate(uuid_column = "_uuid") 
+  check_duplicate(uuid_column = "_uuid") %>%
+  pluck('duplicate_log')
 
 #CHECK 5 - CHECK PII
 clogs_pii <- df %>%
-  check_pii(element_name = "checked_dataset", uuid_column = "_uuid")
+  check_pii(element_name = "checked_dataset", uuid_column = "_uuid") %>%
+  pluck('potential_PII')
 
 #CHECK 6 - CHECK OTHERS
-clogs_check_others <- df
+clogs_check_others <- df %>%
   check_others(
     uuid_column = "_uuid",
     columns_to_check = names(
-      my_raw_dataset |>
+      df |>
         dplyr::select(ends_with("_other")) |>
         dplyr::select(-contains("."))
     )
-  )
+  ) %>%
+  pluck('other_log')
   
 
 #CHECK 7 - CHECK VALUES
@@ -184,7 +200,7 @@ clogs_check_value <- df %>%
 clogs_check_logical <- df %>%
   check_logical_with_list(
     uuid_column = "_uuid",
-    list_of_check = ,
+    list_of_check = df,
     check_id_column = "check_id",
     check_to_perform_column = "check_to_perform",
     columns_to_clean_column = "columns_to_clean",
@@ -215,7 +231,6 @@ ki_age_check <- df %>%
   issue_log(question = "ki_age",
             issue = "ki age is greeter than 90 years, please confirm", action = "f")
 
-
 ## Check 11: ki age and role
 ki_age_check_role <- df %>% 
   filter((ki_age=="30_49" | ki_age=="18_29") & ki_role=="elder") %>% 
@@ -229,7 +244,6 @@ check_site_duration <-df %>%
            (duration_site_established_in_months < 6 & cccm_idps_arrival=="morethansixmonths")) %>% 
   issue_log(question = "cccm_idps_arrival",
             issue = "IDPs arrived in this camp way before it was established, please check", action = "f")
-
 
 ## CHECK 13: NO CAMP STRUCTURE 
 ki_role_check <- df %>% 
@@ -356,8 +370,22 @@ outliers <- outliers %>%
 
 
 
-cleaning_log <- rbind(check_consent,less_time_surveys,long_time_surveys,duplicated_surveys, duplicated_res,other_options,outliers,ki_age_check,ki_role_check,
-                      ki_resident_check,cccm_shelters,cccm_families,cccm_individuals,over_sampling1,over_sampling,ki_age_check_role,check_site_duration)
+cleaningtools_output <- rbind(check_consent,clogs_length, clogs_duplicated_uuid, clogs_duplicate_ki, other_options)
+
+cleaningtools_output_join <- cleaningtools_output %>%
+  left_join(df %>%
+              select(uuid, region, district, today, enumerator, ki_contact) %>%
+              mutate(Reason = "",
+                     action = "",
+                     new_value = ""))
+
+
+
+cleaning_log <- rbind(cleaningtools_output_join,outliers, ki_age_check,ki_role_check, ki_resident_check, 
+      cccm_shelters,cccm_families,cccm_individuals,over_sampling1,over_sampling,
+      ki_age_check_role,check_site_duration)
+
+
 
 
 #Compare today cleaning log from the previous one
