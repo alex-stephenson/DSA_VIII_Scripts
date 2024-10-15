@@ -6,6 +6,8 @@
 
 rm(list = ls())
 today <- Sys.Date()
+date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
+
 
 if (!require("pacman")) install.packages("pacman")
 if (!require("robotoolbox")) remotes::install_gitlab("dickoa/robotoolbox")
@@ -136,258 +138,6 @@ gis_data <- df %>%
 gis_master <- readxl::read_excel("gis/gis_master_DSA_VII.xlsx") ## NEEDS UPDATING
 
 
-# DATA CHECKS
-
-# CHECK 1 declined consent
-check_consent <- df %>% 
-  filter(consent == "no") %>% 
-  issue_log(question = "consent", issue = "consent declined", action = "d")
-
-
-# CHECK 2 - IV LENGTH
-clogs_length <- df %>%
-  check_duration(
-    column_to_check = "interview_duration",
-    uuid_column = "_uuid",
-    log_name = "duration_log",
-    lower_bound = 30,
-    higher_bound = 90
-  ) %>%
-  pluck('duration_log')
-  
-
-#CHECK 3 - DUPLICATED KI
-clogs_duplicate_ki <- df %>%
-  check_duplicate(
-  columns_to_check = c("ki_contact"),
-  log_name = "duplicate phone",
-  uuid_column = "_uuid"
-) %>%
-  pluck('duplicate phone')
-
-#CHECK 4 - DUPLICATED UUID
-clogs_duplicated_uuid <- df %>%
-  check_duplicate(uuid_column = "_uuid") %>%
-  pluck('duplicate_log')
-
-#CHECK 5 - CHECK PII
-clogs_pii <- df %>%
-  check_pii(element_name = "checked_dataset", uuid_column = "_uuid") %>%
-  pluck('potential_PII')
-
-#CHECK 6 - CHECK OTHERS
-clogs_check_others <- df %>%
-  check_others(
-    uuid_column = "_uuid",
-    columns_to_check = names(
-      df |>
-        dplyr::select(ends_with("_other")) |>
-        dplyr::select(-contains("."))
-    )
-  ) %>%
-  pluck('other_log')
-  
-
-#CHECK 7 - CHECK VALUES
-clogs_check_value <- df %>%  
-  check_value(
-    uuid_column = "_uuid",
-    element_name = "checked_dataset",
-    values_to_look = c(999, 9999)
-  ) 
-
-#CHECK 8 - CHECK OTHERS
-clogs_check_logical <- df %>%
-  check_logical_with_list(
-    uuid_column = "_uuid",
-    list_of_check = df,
-    check_id_column = "check_id",
-    check_to_perform_column = "check_to_perform",
-    columns_to_clean_column = "columns_to_clean",
-    description = "description",
-    bind_checks = TRUE
-  ) 
-
-#CHECK 9 - CHECK OUTLIERS
-clogs_check_outliers <- df %>%
-  check_outliers(
-    uuid_column = "_uuid",
-    element_name = "checked_dataset",
-    kobo_survey = questions,
-    kobo_choices = choices,
-    cols_to_add_cleaning_log = NULL,
-    strongness_factor = 3,
-    minimum_unique_value_of_variable = NULL,
-    remove_choice_multiple = TRUE,
-    sm_separator = "/",
-    columns_not_to_check = c()
-  )
-
-################################################################################################################
-
-## Check 10:KI AGE
-ki_age_check <- df %>% 
-  filter(ki_age=="90_above") %>% 
-  issue_log(question = "ki_age",
-            issue = "ki age is greeter than 90 years, please confirm", action = "f")
-
-## Check 11: ki age and role
-ki_age_check_role <- df %>% 
-  filter((ki_age=="30_49" | ki_age=="18_29") & ki_role=="elder") %>% 
-  issue_log(question = "ki_age",
-            issue = "ki age is is less than 50 and his role is an elder", action = "f")
-
-## CHECK 12: IDP ARRIVAL TIMEFRAME
-check_site_duration <-df %>% 
-  filter((duration_site_established_in_months < 4 & cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths")|
-           (duration_site_established_in_months < 2 & cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths"|cccm_idps_arrival=="onetothreemonths")|
-           (duration_site_established_in_months < 6 & cccm_idps_arrival=="morethansixmonths")) %>% 
-  issue_log(question = "cccm_idps_arrival",
-            issue = "IDPs arrived in this camp way before it was established, please check", action = "f")
-
-## CHECK 13: NO CAMP STRUCTURE 
-ki_role_check <- df %>% 
-  filter(ki_role %in% c("gatekeeper", "camp_leader", "site_manager") & camp_structure == "no") %>% 
-  issue_log(question = "camp_structure",
-            issue = "ki has already identifed him/here selft as site manager or gatekeeper, but again reporting no camp structure exist, please confirm",
-            action = "c")
-
-## CHECK 14 - SITE RESIDENT CONTRADICTION
-ki_resident_check <- df %>% 
-  filter(ki_role == "site_resident" & ki_resident == "no") %>% 
-  issue_log(question = "ki_resident",
-            issue = "ki reported in the role as site resident and again reported the ki_resident quesiton as no, please confirm",
-            action = "c")
-
-## CHECK 15 - SMALL CAMP
-cccm_shelters <- df %>% 
-  filter(cccm_populationestimates_shelters < 50) %>% 
-  issue_log(question = "cccm_populationestimates_shelters",
-            issue = "the number shelters in the camp are less then 50, please confirm with enumerator",
-            action = "c")
-
-## CHECK 16 - SMALL # FAMILIES
-cccm_families <- df %>% 
-  filter(cccm_populationestimates_families < 100) %>% 
-  issue_log(question = "cccm_populationestimates_families",
-            issue = "the number of families in the camp are less than 100, please confirm with enumeator",
-            action = "c")
-
-## CHECK 17 - SMALL # INDIVIDUALS
-cccm_individuals <- df %>% 
-  filter(cccm_populationestimates_individuals < 150) %>% 
-  issue_log(question = "cccm_populationestimates_individuals",
-            issue = "the number of individuals in the camp are less than 150, please confirm with enumerator",
-            action = "c")
-
-## CHECK 18 - IDP MULTIPLE IVS
-n_occur <- data.frame(table(df$idp_code))
-n_occur <- n_occur[n_occur$Freq > 4,]
-over_sampling <- df[df$idp_code %in% n_occur$Var1[n_occur$Freq > 4],] %>% 
-  issue_log(question = "idp_code", issue = "idp site interviewed more than 4 times", action = "f")
-
-
-
-## CHECK 19 - MULTIPLE KI ROLES
-f<-as.data.frame(df %>% 
-                   group_by(idp_code,ki_role) %>%
-                   dplyr::summarise(n=n()) %>%
-                   filter(n > 1))
-
-over_sampling1 <- df %>%
-  filter(idp_code %in% f$idp_code) %>%
-  issue_log(question = "ki_role", issue = "you have interviewed more than 1 Ki_role in one site,verify", action = "f")
-
-
-## CHECK 20 - ISSUES WITH OTHERS ANSWERS
-other_options <- df %>%  
-  dplyr::select(ends_with("_other"), "localisation_region_label", "district_name", "today","enum_name", "uuid", "ki_contact") %>% 
-  pivot_longer(ends_with("_other"),
-               names_to = "question",
-               values_to = "old_value") %>% 
-  filter(!is.na(old_value)) %>% 
-  mutate(issue = "please translate other options and recode them in the respective choice if possible",
-         new_value = "",
-         Reason = "",
-         action = "c") %>% 
-  select("uuid", "localisation_region_label", "district_name", "today", "enum_name","question", "issue",
-         "old_value", "new_value","Reason", "ki_contact","action")
-
-
-# # renaming column heads to merge with the clogs
-other_options <- other_options %>%
-  dplyr::rename(
-    enumerator = "enum_name",
-    region = "localisation_region_label",
-    district = "district_name"
-  )
-
-##Remove setllment other
-
-
-l4 <- questions %>% 
-  filter(grepl("(numerical|integer)",type)) %>% 
-  pull(name)
-
-l4 <- l4[which(l4 %in% colnames(df))]
-
-l4 <- l4[l4 %!in% c("referral_phone" )]
-
-#Outliers
-
-df <- df %>%
-  dplyr::rename(
-    enumerator = enum_name,
-    region = localisation_region_label
-#    district = district_name
-  )  
-
-# detect outliers
-outliers.sub1 <- df %>%  
-  select("uuid", "region","district","today","enumerator","ki_contact", all_of(l4)) %>% 
-  detect.outliers(., method="sd-linear", n.sd=3)
-outliers.sub2 <- df %>% 
-  select("uuid", "region","district","today","enumerator","ki_contact", all_of(l4)) %>% 
-  detect.outliers(., method="sd-log", n.sd=3)
-outliers.sub3 <- df %>% 
-  select("uuid", "region","district","today","enumerator","ki_contact", all_of(l4)) %>% 
-  detect.outliers(., method="iqr-linear")
-outliers.sub4 <- df %>% 
-  select("uuid", "region","district","today","enumerator","ki_contact", all_of(l4)) %>% 
-  detect.outliers(., method="iqr-log")
-
-outliers <- rbind(outliers.sub1, outliers.sub2, outliers.sub3, outliers.sub4)
-
-outliers <- outliers %>% 
-  mutate(mid=paste0(uuid, issue))
-
-outliers <- outliers[!duplicated(outliers$mid),] %>% 
-  select(-mid) 
-
-outliers <- outliers[!(row.names(outliers) %in% c("enumerator")),]
-outliers <- outliers %>% 
-  filter(question !="enumerator")
-
-
-
-cleaningtools_output <- rbind(check_consent,clogs_length, clogs_duplicated_uuid, clogs_duplicate_ki, other_options)
-
-cleaningtools_output_join <- cleaningtools_output %>%
-  left_join(df %>%
-              select(uuid, region, district, today, enumerator, ki_contact) %>%
-              mutate(Reason = "",
-                     action = "",
-                     new_value = ""))
-
-
-
-cleaning_log <- rbind(cleaningtools_output_join,outliers, ki_age_check,ki_role_check, ki_resident_check, 
-      cccm_shelters,cccm_families,cccm_individuals,over_sampling1,over_sampling,
-      ki_age_check_role,check_site_duration)
-
-
-
-
 #Compare today cleaning log from the previous one
 
 gis_data  <- filter(gis_data, uuid %!in% gis_master$uuid)
@@ -425,13 +175,208 @@ fo_district_mapping <- read_excel(fo_base_assingment_str) %>%
   dplyr::rename("district" = "district_for_code") %>%
   mutate_all(tolower)
 
+########### code logical checks for the check_logical function call ##############
 
-#each KI will be asked if they have other potential contacts for the DSA, those are grouped by FO similar to the clogs
+n_occur_idp_code <- df %>%
+  dplyr::count(idp_code) %>%
+  filter(n > 4)
+
+count_ki_roles_site <- df %>% 
+  group_by(idp_code,ki_role) %>%
+  dplyr::summarise(n=n()) %>%
+  filter(n > 1)
+
+check_list <- data.frame(
+  name = c(
+    "KI_Consent",
+    "KI_too_old",
+    "KI_age_and_role",
+    "IDP_arrival_time",
+    "ki_role_camp_structure",
+    "ki_role_resident",
+    "small_camp",
+    "small_families",
+    "low_number_of_individuals",
+    "idp_code_count",
+    "ki_role_per_site"),
+  check = c(
+    r"(consent == "no")",
+    "ki_age == \"90_above\"",
+    r"((ki_age=="30_49" | ki_age=="18_29") & ki_role=="elder")",
+    r"((duration_site_established_in_months < 4 & cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths")|
+    (duration_site_established_in_months < 2 & cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths"|cccm_idps_arrival=="onetothreemonths")|
+    (duration_site_established_in_months < 6 & cccm_idps_arrival=="morethansixmonths"))",
+    r"(ki_role %in% c("gatekeeper", "camp_leader", "site_manager") & camp_structure == "no")",
+    r"(ki_role == "site_resident" & ki_resident == "no")",
+    r"(cccm_populationestimates_shelters < 50)",
+    r"(cccm_populationestimates_families < 100)",
+    r"(cccm_populationestimates_individuals < 150)",
+    r"(idp_code %in% n_occur_idp_code$idp_code)",
+    r"(idp_code %in% count_ki_roles_site$idp_code)"
+  ),
+  description = c(
+    "KI has not given consent. Please review why.",
+    "KI respondent has said they are older than 90. Please check",
+    "ki age is is less than 50 and his role is an elder",
+    "IDPs claim they have arrived before the site was set up",
+    "ki has already identifed him/here selft as site manager or gatekeeper, but again reporting no camp structure exist, please confirm",
+    "ki reported in the role as site resident and again reported the ki_resident quesiton as no, please confirm",
+    "the number shelters in the camp are less then 50, please confirm with enumerator",
+    "the number of families in the camp are less than 100, please confirm with enumeator",
+    "less than 150 people in the camp. Please confirm with the enumerator",
+    "IDP Site interviewed more than four times. Please verify.",
+    "The same role has been interviewed in a site more than once. Please verify"
+  ),
+  columns_to_clean = c(
+    "consent",
+    "ki_age",
+    "ki_age, ki_role",
+    "duration_site_established_in_months, cccm_idps_arrival",
+    "ki_role, camp_structure",
+    "ki_role, ki_resident",
+    "cccm_populationestimates_shelters",
+    "cccm_populationestimates_families",
+    "cccm_populationestimates_individuals",
+    "idp_code",
+    "idp_code"
+    
+  )
+)
 
 
-group_by_fo <- fo_district_mapping %>%
+############ data cleaning ############
+
+outlier_excluded_questions <- questions %>%
+  filter(type != 'integer') %>%
+  pull(name) %>%
+  unique()
+
+# intersect between the dataset and the kobo tool questions to make sure we get a clean list
+excluded_questions_in_data <- intersect(colnames(df), outlier_excluded_questions)
+
+
+
+df <- df %>%
+  left_join(fo_district_mapping, by = join_by(district))
+
+
+group_by_fo <- df %>%
   dplyr::group_by(fo_in_charge_for_code)
 
+checked_data_by_fo <- group_by_fo %>%
+  group_split() %>%
+  purrr::map(~ 
+               check_duplicate(
+                  dataset = .,
+                  columns_to_check = c("ki_contact"),
+                  log_name = "duplicate phone",
+                  uuid_column = "_uuid"
+                ) %>%
+                check_duration(
+                  column_to_check = "interview_duration",
+                  uuid_column = "_uuid",
+                  log_name = "duration_log",
+                  lower_bound = 30,
+                  higher_bound = 90
+                ) %>%
+                check_duplicate(uuid_column = "_uuid") %>%
+                check_pii(element_name = "checked_dataset", uuid_column = "_uuid") %>%
+                check_others(
+                  uuid_column = "_uuid",
+                  columns_to_check = names(
+                    df |>
+                      dplyr::select(ends_with("_other")) |>
+                      dplyr::select(-contains("."))
+                  )
+                ) %>%
+                check_value(
+                  uuid_column = "uuid",
+                  element_name = "checked_dataset",
+                  values_to_look = c(999, 9999)
+                ) %>%
+               check_outliers(
+                 uuid_column = "uuid",
+                 element_name = "checked_dataset",
+                 kobo_survey = questions,
+                 kobo_choices = choices,
+                 cols_to_add_cleaning_log = NULL,
+                 strongness_factor = 3,
+                 minimum_unique_value_of_variable = NULL,
+                 remove_choice_multiple = TRUE,
+                 sm_separator = "/",
+                 columns_not_to_check = NULL
+#ADD WITH PROPER DATA                 columns_not_to_check = c(excluded_questions_in_data, "interview_duration", "CHECK_interview_duration", "_gps_latitude","_gps_longitude","_gps_altitude","_gps_precision","_id","_index")
+                ) %>%
+               check_logical_with_list(list_of_check = check_list,
+                                       check_id_column = "name",
+                                       check_to_perform_column = "check",
+                                       columns_to_clean_column = "columns_to_clean",
+                                       description_column = "description"
+               ))
+
+
+
+cleaning_log <- checked_data_by_fo %>%
+  purrr::map(~ .[] %>%
+               create_combined_log() %>% 
+               add_info_to_cleaning_log(
+                 list_of_log = .,
+                 dataset = "checked_dataset",
+                 cleaning_log = "cleaning_log",
+                 information_to_add = c("idp_code", "enumerator",  "district", "ki_contact", "ki_name")
+#                 information_to_add = c("settlement", "district", "enum_code", "ki_name", "ki_phone_number", "comment")
+    
+               )
+  )
+
+cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[], 
+                                                       cleaning_log_name = "cleaning_log",
+                                                       change_type_col = "change_type",
+                                                       column_for_color = "check_binding",
+                                                       header_front_size = 10,
+                                                       header_front_color = "#FFFFFF",
+                                                       header_fill_color = "#ee5859",
+                                                       header_front = "Calibri",
+                                                       body_front = "Calibri",
+                                                       body_front_size = 10,
+                                                       use_dropdown = F,
+                                                       sm_dropdown_type = "numerical",
+                                                       kobo_survey = questions,
+                                                       kobo_choices = choices,
+                                                       output_path = paste0("clogs/",
+                                                                            unique(.[]$checked_dataset$fo_in_charge_for_code),
+                                                                            "cleaning_log_",
+                                                                            unique(.[]$checked_dataset$fo_in_charge_for_code),
+                                                                            "_",
+                                                                            date_time_now,
+                                                                            ".xlsx")))
+
+# make copies of the clogs for archive purposes
+cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[], 
+                                                       cleaning_log_name = "cleaning_log",
+                                                       change_type_col = "change_type",
+                                                       column_for_color = "check_binding",
+                                                       header_front_size = 10,
+                                                       header_front_color = "#FFFFFF",
+                                                       header_fill_color = "#ee5859",
+                                                       header_front = "Calibri",
+                                                       body_front = "Calibri",
+                                                       body_front_size = 10,
+                                                       use_dropdown = F,
+                                                       sm_dropdown_type = "numerical",
+                                                       kobo_survey = kobo_survey,
+                                                       kobo_choices = kobo_choice,
+                                                       output_path = paste0("04_data_cleaning/_clean_files_for_archive/cleaning_log_",
+                                                                            unique(.[]$checked_dataset$fo_in_charge_for_code),
+                                                                            "_",
+                                                                            date_time_now,
+                                                                            ".xlsx")
+)
+)
+
+
+
+#each KI will be asked if they have other potential contacts for the DSA, those are grouped by FO similar to the clogs
 contact_data_by_fo <- group_by_fo %>%
   dplyr::group_split() %>%
   purrr::map(~ filter(., referral_yn == "yes") %>%
@@ -448,17 +393,30 @@ contact_data_by_fo <- group_by_fo %>%
 
 
 
-f_team<- read_excel("input/Field team work distribution.xlsx")
-f_team$Locations <-tolower(gsub(" ","_",f_team$Locations))
-f_team$`Responsible FO`<-gsub("\\/","_",f_team$`Responsible FO`)
-referall$FO <-f_team$`Responsible FO`[match(referall$district_name,f_team$Locations)]
-referall$regionFO <-paste0("referall_contacts_",referall$localisation_region_label,"_")
 
 
-spt1<-split(referall,referall$FO)
- 
+### look into referrals
 
-setDT(referall)
+f_team <- read_excel("input/Field team work distribution.xlsx")
+
+# Clean and transform the columns using dplyr and stringr functions
+f_team <- f_team %>%
+  mutate(
+    Locations = str_replace_all(tolower(Locations), " ", "_"),      # Convert to lowercase and replace spaces with underscores
+    `Responsible FO` = str_replace_all(`Responsible FO`, "/", "_")  # Replace "/" with "_"
+  )
+
+# Match locations in 'referall' with 'f_team$Locations' to assign 'FO'
+referall <- referall %>%
+  mutate(
+    FO = f_team$`Responsible FO`[match(district_name, f_team$Locations)],  # Match 'district_name' with 'Locations'
+    regionFO = paste0("referall_contacts_", localisation_region_label, "_")  # Create 'regionFO'
+  )
+
+# Split 'referall' by 'FO' using purrr::split
+spt1 <- referall %>%
+  split(.$FO)
+
 
 # Function to process referral contacts and save to Excel
 save_referral_contacts <- function(person_name, folder_name) {
