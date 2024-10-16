@@ -19,7 +19,6 @@ p_load(rio,
        keyring)
 # load packages
 library(openxlsx, quietly = T)
-library(rpivotTable, quietly = T)
 library(cleaninginspectoR, quietly = T)
 library(koboAPI, quietly = T)
 library(openxlsx, quietly = T)
@@ -67,17 +66,24 @@ if (access_from_server == TRUE) {
 ## read in site level data
 
 site_path <- sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Team - Displacement to Durable Solutions (DDS)\03_DDSU\SOMXX_DSA\01_Research_Design\Reference_Data\idp-site-master-list-sep-2024.xlsx)", user_login)
-site_data <- read_excel(site_path, sheet = "Sites for Field")
+site_data <- read_excel(site_path, sheet = "Sites for Field") %>%
+  mutate(District = str_to_title(District))
+
 
 ## read in FO site and locations
 fo_base_assingment_str <- sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Team - Displacement to Durable Solutions (DDS)\03_DDSU\SOMXX_DSA\03_Data_Analysis\DSA_VIII_Scripts\input/Field team work distribution.xlsx)", user_login)
-fo_district_mapping <- read_excel(fo_base_assingment_str)
+fo_district_mapping <- read_excel(fo_base_assingment_str) %>%
+  mutate(Locations = str_to_title(Locations))
 
 field_officer_location <- site_data %>%
   left_join(fo_district_mapping, by = join_by("District" == "Locations")) %>%
   distinct(`CCCM IDP Site Code`, District, Responsible_FO) %>%
-  mutate(Responsible_FO = str_replace_all(Responsible_FO, "/", "_"))
+  mutate(Responsible_FO = str_replace_all(Responsible_FO, "/", "_"),
+         Responsible_FO = ifelse(Responsible_FO == "" | is.na(Responsible_FO), "No_FO", Responsible_FO)) %>%
+  filter(!is.na(`CCCM IDP Site Code`))
   
+
+field_officer_location$Responsible_FO <- ifelse(field_officer_location$Responsible_FO == "" | is.na(field_officer_location$Responsible_FO), "No_FO", field_officer_location$Responsible_FO)
 #############load datasets ##################
 
 
@@ -134,10 +140,11 @@ if (nrow(df) == 0) {
 ## add a flag for whether there is a referral included for later
 df <- df %>%
   mutate(referral_yn = case_when(
-    str_starts(referral_person, "yes") ~ "yes",
-    str_starts(referral_person, "no") ~ "no",
+    str_starts(referral_person, "Yes") ~ "Yes",
+    str_starts(referral_person, "No") ~ "No",
     TRUE ~ NA_character_
   ))
+
 
 tool.survey<- questions%>%
   filter(name%in%colnames(df))
@@ -295,6 +302,9 @@ excluded_questions_in_data <- intersect(colnames(df), outlier_excluded_questions
 df <- df %>%
   left_join(field_officer_location, by = join_by(idp_code == `CCCM IDP Site Code`))
 
+df$Responsible_FO <- ifelse(df$Responsible_FO == "" | is.na(df$Responsible_FO), "No_FO", df$Responsible_FO)
+
+
 group_by_fo <- df %>%
   dplyr::group_by(Responsible_FO)
 
@@ -426,27 +436,25 @@ cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[],
 contact_data_by_fo <- group_by_fo %>%
 #  mutate(referral_yn = sample(c("yes", "no"), size = nrow(.), replace = TRUE)) %>%
   dplyr::group_split() %>%
-  purrr::map(~ filter(., referral_yn == "yes") %>%
-               select(Responsible_FO, idp_code, ki_name, referral_name, referral_phone)
+  purrr::map(~ filter(., referral_yn == "Yes") %>%
+               select(Responsible_FO, idp_code, district_name, ki_name, referral_name, referral_phone)
                )
 
-
-
 ### make the file directories if required for the referrals
-for (i in 1:nrow(FO_names)) {
-  dir_path <- paste0("referral/", FO_names[i, 1])
-  
-  if (!dir.exists(dir_path)) {
-    dir.create(dir_path, recursive = TRUE)
-  }
-  
-}
+#for (i in 1:nrow(FO_names)) {
+#  dir_path <- paste0("referral/", FO_names[i, 1])
+#  
+#  if (!dir.exists(dir_path)) {
+#    dir.create(dir_path, recursive = TRUE)
+#  }
+#  
+#}
 
 # Function to write or append data to Excel
 write_or_append_excel <- function(data, fo_name, output_dir) {
   
   # Construct the file path
-  file_path <- file.path(output_dir, paste0(fo_name, "_contact_data.xlsx"))
+  file_path <- file.path(output_dir, paste0("referral/", fo_name, "_contact_data.xlsx"))
   
   # If the file exists, append the data
   if (file.exists(file_path)) {
@@ -488,24 +496,42 @@ purrr::walk(contact_data_by_fo, ~ {
 
 
 
+cat(r"( ____        _               _                           _ _ 
+|  _ \  __ _| |_ __ _    ___| | ___  __ _ _ __   ___  __| | |
+| | | |/ _` | __/ _` |  / __| |/ _ \/ _` | '_ \ / _ \/ _` | |
+| |_| | (_| | || (_| | | (__| |  __/ (_| | | | |  __/ (_| |_|
+|____/ \__,_|\__\__,_|  \___|_|\___|\__,_|_| |_|\___|\__,_(_))")
+
+
+cat("\n\n\n\n\n\n\n\n\n\n")
+
+
+cat(r"() ____            _       _                               _      _       _ 
+/ ___|  ___ _ __(_)_ __ | |_    ___ ___  _ __ ___  _ __ | | ___| |_ ___| |
+\___ \ / __| '__| | '_ \| __|  / __/ _ \| '_ ` _ \| '_ \| |/ _ \ __/ _ \ |
+ ___) | (__| |  | | |_) | |_  | (_| (_) | | | | | | |_) | |  __/ ||  __/_|
+|____/ \___|_|  |_| .__/ \__|  \___\___/|_| |_| |_| .__/|_|\___|\__\___(_)
+                  |_|                             |_|                     )")
+
+
 
 # creating Dashborad and scripts 
 
-dashboard <- df %>% select(start,end,audit,today,deviceid,	enum_name,localisation_region,	consent,	localisation_district,
-                           district,	localisation_region_label,	localisation_district_label,	idp_code,	idp_code_verification,
-                           idp_code_districti_verification,	ki_role,	ki_role_other,	observation_faecalmatter,	observation_shelters_flood,
-                           observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
-                           observation_gps,	observation_gps,	`_observation_gps_latitude`,`_observation_gps_longitude`,
-                           `_observation_gps_altitude`,`_observation_gps_precision`,
-                           `_uuid`,	district_name,	IDP_Site
-)
+#dashboard <- df %>% select(start,end,audit,today,deviceid,	enum_name,localisation_region,	consent,	localisation_district,
+#                           district,	localisation_region_label,	localisation_district_label,	idp_code,	idp_code_verification,
+#                           idp_code_districti_verification,	ki_role,	ki_role_other,	observation_faecalmatter,	observation_shelters_flood,
+#                           observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
+#                           observation_gps,	observation_gps,	`_observation_gps_latitude`,`_observation_gps_longitude`,
+#                           `_observation_gps_altitude`,`_observation_gps_precision`,
+#                           `_uuid`,	district_name,	IDP_Site
+#)
 
 ################################Data for dashboard
 #write.xlsx(dashboard,paste("C:\\Users\\aaron.langat\\Documents\\R\\01_DSA\\DSA_Tracker_Dashboard\\input/2023_REACH_SOM_DSA_TESTING.xlsx"))
-raw_data <- df %>% select(-c(ki_contact,ki_name,referral_person,referral_name,referral_phone,observation_gps,`_observation_gps_latitude`,`_observation_gps_longitude`,
-                             `_observation_gps_altitude`,`_observation_gps_precision`))
+#raw_data <- df %>% select(-c(ki_contact,ki_name,referral_person,referral_name,referral_phone,observation_gps,`_observation_gps_latitude`,`_observation_gps_longitude`,
+#                             `_observation_gps_altitude`,`_observation_gps_precision`))
 
 #write.xlsx(raw_data,paste("C:\\Users\\aaron.langat\\ACTED\\IMPACT SOM - Unit 1 - Intersectoral\\SOM 23 DSA\\04_Data\\03_Data_Cleaning\\00_Tool_Raw_Data/SOM2204_CCCM_DSA.xlsx"))
 
 
-##################################adding resposible FOs and splitting##################
+
