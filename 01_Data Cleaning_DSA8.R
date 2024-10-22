@@ -29,7 +29,6 @@ library(robotoolbox, quietly = T)
 
 ## Hard code values
 consent <- "consent"
-uuid <- "uuid"
 mindur <- 30
 maxdur <- 90
 
@@ -54,20 +53,25 @@ if (access_from_server == TRUE) {
   print("Kobo data successfully accessed from server")
   
 } else {
-  df <- readxl::read_excel(r"(input/SOM2204_CCCM_DSA_July.xlsx)") ###### remove this once no longer required ###############
+  df <- readxl::read_excel(choose.files()) ###### remove this once no longer required ###############
+#  df <- readxl::read_excel(r"(input/SOM2204_CCCM_DSA_July.xlsx)") ###### remove this once no longer required ###############
   district_file <- read.csv("input/idp_list.csv")
-  koboToolPath = "input/tool/REACH_2023_SOM_DSA_Survey_Tool.xlsx"
+  koboToolPath = sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Team - Displacement to Durable Solutions (DDS)\03_DDSU\SOMXX_DSA\02_Data_Collection\01_Tool/REACH_2024_SOM_DSA_Survey_Tool_VIII.xlsx)", user_login)
   questions = import(koboToolPath,sheet="survey") %>% 
     filter(!is.na(name))
   choices = import(koboToolPath,sheet="choices")
 }
-
 
 ## read in site level data
 
 site_path <- sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Team - Displacement to Durable Solutions (DDS)\03_DDSU\SOMXX_DSA\01_Research_Design\Reference_Data\idp-site-master-list-sep-2024.xlsx)", user_login)
 site_data <- read_excel(site_path, sheet = "Sites for Field") %>%
   mutate(District = str_to_title(District))
+
+df <- df %>%
+  dplyr::rename("uuid" = "_uuid",
+                "idp_site" = "localisation_site")
+
 
 
 ## read in FO site and locations
@@ -119,23 +123,23 @@ if (dynamic_date) {
   print(date_to_filter)
 
   df <- df %>% 
-    left_join(district_file, by = c("idp_code")) %>%
+    left_join(district_file, by = c("idp_code", "district_name")) %>%
     mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
     filter(submission_date == date_to_filter) 
   
   } else {
     
     df <- df %>% 
-      left_join(district_file, by = c("idp_code")) %>%
+      left_join(district_file, by = c("idp_code", "district_name")) %>%
       mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
-      filter(submission_date == "2023-10-08") 
+      filter(submission_date == "2024-10-21") 
   }
 
 if (nrow(df) == 0) {
   stop("Data ingested is empty")
 }
 
-Sys.sleep(3)
+Sys.sleep(0.5)
 
 ## add a flag for whether there is a referral included for later
 df <- df %>%
@@ -145,6 +149,23 @@ df <- df %>%
     TRUE ~ NA_character_
   ))
 
+df <- df %>%
+  left_join(choices %>%
+              filter(!is.na(region))  %>%
+              select(name, `label::English (en)`) %>%
+              dplyr::rename(localisation_region_label = `label::English (en)`),
+            by = join_by("localisation_region" == "name")) %>%
+  relocate(localisation_region_label, .after = "localisation_region")
+
+
+
+dashboard <- df %>% select(start,end,audit,today,deviceid,	enum_name,	consent,	district_name,	localisation_region_label,	idp_code,	idp_site, idp_code_verification,
+                           idp_code_districti_verification,	ki_role,	ki_role_other,	observation_faecalmatter,	observation_shelters_flood,
+                           observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
+                           observation_gps,	observation_gps,	`_observation_gps_latitude`,`_observation_gps_longitude`,
+                           `_observation_gps_altitude`,`_observation_gps_precision`,
+                           `uuid`
+)
 
 tool.survey<- questions%>%
   filter(name%in%colnames(df))
@@ -231,9 +252,9 @@ check_list <- data.frame(
     r"(consent == "no")",
     "ki_age == \"90_above\"",
     r"((ki_age=="30_49" | ki_age=="18_29") & ki_role=="elder")",
-    r"((duration_site_established_in_months < 4 & cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths")|
-    (duration_site_established_in_months < 2 & cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths"|cccm_idps_arrival=="onetothreemonths")|
-    (duration_site_established_in_months < 6 & cccm_idps_arrival=="morethansixmonths"))",
+    r"((duration_site_established_in_months < 4 & (cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths"))|
+    (duration_site_established_in_months < 2 & (cccm_idps_arrival=="morethansixmonths" | cccm_idps_arrival=="fourtosixmonths"|cccm_idps_arrival=="onetothreemonths"))|
+    (duration_site_established_in_months < 6 & (cccm_idps_arrival=="morethansixmonths")))",
     r"(ki_role %in% c("gatekeeper", "camp_leader", "site_manager") & camp_structure == "no")",
     r"(ki_role == "site_resident" & ki_resident == "no")",
     r"(cccm_populationestimates_shelters < 50)",
@@ -286,6 +307,12 @@ df <- df %>%
 
 df$Responsible_FO <- ifelse(df$Responsible_FO == "" | is.na(df$Responsible_FO), "No_FO", df$Responsible_FO)
 
+# df_no_pii <- df %>%
+#   select(-c('enum_name', 'ki_name', 'ki_contact', 'observation_gps', 'referral_name', 'referral_phone', 
+#             '_observation_gps_precision',
+#             '_observation_gps_latitude', '_observation_gps_longitude', '_observation_gps_altitude'))
+
+
 
 group_by_fo <- df %>%
   dplyr::group_by(Responsible_FO)
@@ -297,19 +324,29 @@ checked_data_by_fo <- group_by_fo %>%
                   dataset = .,
                   columns_to_check = c("ki_contact"),
                   log_name = "duplicate phone",
-                  uuid_column = "_uuid"
+                  uuid_column = "uuid"
                 ) %>%
                 check_duration(
                   column_to_check = "interview_duration",
-                  uuid_column = "_uuid",
+                  uuid_column = "uuid",
                   log_name = "duration_log",
                   lower_bound = 30,
                   higher_bound = 90
                 ) %>%
-                check_duplicate(uuid_column = "_uuid") %>%
-                check_pii(element_name = "checked_dataset", uuid_column = "_uuid") %>%
+                check_duplicate(uuid_column = "uuid") %>%
+               check_soft_duplicates(
+                 dataset = .,
+                 kobo_survey =questions,
+                 uuid_column = "uuid",
+                 idnk_value = "dnk",
+                 sm_separator = "//",
+                 log_name = "soft_duplicate_log",
+                 threshold = 7,
+                 return_all_results = T
+               ) %>%
+#                check_pii(element_name = "checked_dataset", uuid_column = "uuid") %>%
                 check_others(
-                  uuid_column = "_uuid",
+                  uuid_column = "uuid",
                   columns_to_check = names(
                     df |>
                       dplyr::select(ends_with("_other")) |>
@@ -350,7 +387,7 @@ cleaning_log <- checked_data_by_fo %>%
                  list_of_log = .,
                  dataset = "checked_dataset",
                  cleaning_log = "cleaning_log",
-                 information_to_add = c("idp_code", "enum_name",  "district", "ki_contact", "ki_name")
+                 information_to_add = c("idp_code", "enum_name",  "district_name", "ki_contact", "ki_name")
 #                 information_to_add = c("settlement", "district", "enum_code", "ki_name", "ki_phone_number", "comment")
     
                )
@@ -374,8 +411,8 @@ cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[],
                                                        header_front_size = 10,
                                                        header_front_color = "#FFFFFF",
                                                        header_fill_color = "#ee5859",
-                                                       header_front = "Calibri",
-                                                       body_front = "Calibri",
+                                                       header_front = "Arial Narrow",
+                                                       body_front = "Arial Narrow",
                                                        body_front_size = 10,
                                                        use_dropdown = F,
                                                        sm_dropdown_type = "numerical",
@@ -419,7 +456,7 @@ contact_data_by_fo <- group_by_fo %>%
 #  mutate(referral_yn = sample(c("yes", "no"), size = nrow(.), replace = TRUE)) %>%
   dplyr::group_split() %>%
   purrr::map(~ filter(., referral_yn == "Yes") %>%
-               select(Responsible_FO, idp_code, district_name, ki_name, referral_name, referral_phone)
+               select(Responsible_FO, idp_code, ki_name, referral_name, referral_phone)
                )
 
 ### make the file directories if required for the referrals
@@ -483,7 +520,7 @@ purrr::walk(contact_data_by_fo, ~ {
 gis_data <- df %>% 
   filter(interview_duration>=30 & interview_duration <= 90 & consent=="yes") %>% 
   select(uuid,start,end,audit,today,enum_name,localisation_region_label,
-         ki_contact,district_name,idp_code,IDP_Site,contains("gps"),more_info) %>%
+         ki_contact,district_name,idp_code,idp_site,contains("gps"),more_info) %>%
   left_join((field_officer_location %>% select(`CCCM IDP Site Code`, 
                                               Responsible_FO)),
             , by = join_by("idp_code" == `CCCM IDP Site Code`))
@@ -492,6 +529,60 @@ gis_data <- df %>%
 write.xlsx(gis_data,paste("gis/spatial_checks",today,".xlsx"))
 
 
+### add KI data
+
+current_KI_db <- read_xlsx(sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\10_Common files\KI_Database\KI_Contact_List.xlsx)", user_login))
+
+
+
+KI_db <- df %>%
+  filter(future_rc_consent == "yes") %>%
+  select(district_name,
+         localisation_region_label,
+         idp_site,
+         starts_with("ki_"),
+         Responsible_FO) %>%
+  mutate(date = Sys.Date(),
+         research = "DSA"
+  )
+
+appended_db <- current_KI_db %>%
+  dplyr::bind_rows(KI_db) %>%
+  dplyr::distinct()
+
+
+  # Create a new workbook
+KI_wb <- createWorkbook()
+
+# Add a worksheet
+addWorksheet(KI_wb, "KI_database")
+
+# Write the data frame to the worksheet
+writeData(KI_wb, sheet = "KI_database", x = appended_db)
+
+# Apply filters to the data
+addFilter(KI_wb, sheet = "KI_database", row = 1, cols = 1:ncol(appended_db))
+
+# Adjust the column widths to fit the content
+setColWidths(KI_wb, sheet = "KI_database", cols = 1:ncol(appended_db), widths = "auto")
+
+# Create a style for the column headers
+headerStyle <- createStyle(
+  fontSize = 12,
+  fontColour = "#FFFFFF",   # White text color
+  fgFill = "#4F81BD",       # Blue background color
+  halign = "center",        # Center align the text
+  textDecoration = "bold"   # Bold text
+)
+
+# Apply the header style to the first row
+addStyle(KI_wb, sheet = "KI_database", style = headerStyle, rows = 1, cols = 1:ncol(appended_db), gridExpand = TRUE)
+
+# Save the workbook to an Excel file
+saveWorkbook(KI_wb, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\10_Common files\KI_Database\KI_Contact_List.xlsx)", user_login), overwrite = TRUE)
+
+
+#################
 
 cat(r"( ____        _               _                           _ _ 
 |  _ \  __ _| |_ __ _    ___| | ___  __ _ _ __   ___  __| | |
@@ -714,29 +805,10 @@ jjs__  _  ___  _ ____________ _____  ___ _|\ _|\_|\\/ _______________  ___   _
                                                                                                     
                                                                                                     
                                                                                                     
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                  
+##############################
+######Data for dashboard
+#write.xlsx(dashboard,paste("dashboard/dashboard_input_", today, ".x;sx))
 
-
-# creating Dashborad and scripts 
-
-#dashboard <- df %>% select(start,end,audit,today,deviceid,	enum_name,localisation_region,	consent,	localisation_district,
-#                           district,	localisation_region_label,	localisation_district_label,	idp_code,	idp_code_verification,
-#                           idp_code_districti_verification,	ki_role,	ki_role_other,	observation_faecalmatter,	observation_shelters_flood,
-#                           observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
-#                           observation_gps,	observation_gps,	`_observation_gps_latitude`,`_observation_gps_longitude`,
-#                           `_observation_gps_altitude`,`_observation_gps_precision`,
-#                           `_uuid`,	district_name,	IDP_Site
-#)
-
-################################Data for dashboard
-#write.xlsx(dashboard,paste("C:\\Users\\aaron.langat\\Documents\\R\\01_DSA\\DSA_Tracker_Dashboard\\input/2023_REACH_SOM_DSA_TESTING.xlsx"))
-#raw_data <- df %>% select(-c(ki_contact,ki_name,referral_person,referral_name,referral_phone,observation_gps,`_observation_gps_latitude`,`_observation_gps_longitude`,
-#                             `_observation_gps_altitude`,`_observation_gps_precision`))
-
-#write.xlsx(raw_data,paste("C:\\Users\\aaron.langat\\ACTED\\IMPACT SOM - Unit 1 - Intersectoral\\SOM 23 DSA\\04_Data\\03_Data_Cleaning\\00_Tool_Raw_Data/SOM2204_CCCM_DSA.xlsx"))
 
 
 
