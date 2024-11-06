@@ -26,56 +26,88 @@ library(readxl, quietly = T)
 library(kableExtra, quietly = T)
 library(cleaningtools, quietly = T)
 library(robotoolbox, quietly = T)
+library(ImpactFunctions)
 
 ## Hard code values
 consent <- "consent"
 mindur <- 30
 maxdur <- 90
 
-dynamic_date <- FALSE
-access_from_server <- FALSE
+dynamic_date <- TRUE
+access_from_server <- TRUE
 
 ###################################################
 ###### STEP 2 - IMPORT DATA AND FUNCTIONS #########
 ###################################################
 
-
 user_login <- Sys.info()[["user"]]
-wd_path <- sprintf(r"(C:/Users/%s/ACTED/IMPACT SOM - 02_Research/01_REACH/Team - Displacement to Durable Solutions (DDS)/03_DDSU/SOMXX_DSA/03_Data_Analysis/DSA_VIII_Scripts)", user_login)
+wd_path <- sprintf(r"(C:/Users/%s/ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025/03_Data_Analysis/DSA_VIII_Scripts)", user_login)
 setwd(wd_path)
 
+args <- commandArgs(trailingOnly = TRUE)
+
+# Parse args into a named list
+arg_list <- list()
+for (arg in args) {
+  key_value <- strsplit(arg, "=")[[1]]
+  if (length(key_value) == 2) {
+    arg_list[[key_value[1]]] <- key_value[2]
+  }
+}
+
+# Assign default values if certain arguments are missing
+username <- arg_list[["username"]] %||% "alex_stephenson"
+asset_id <- arg_list[["asset_id"]] %||% "asSj6Aq8kDg5FULShCKbjN"
+date_selection <- arg_list[["date_selection"]] %||% NA  # Optional, can be NA
+
+# Use these variables in your code
+print(paste("Username:", username))
+print(paste("Asset ID:", asset_id))
+print(paste("Date Selection:", date_selection))
+
+#asset_id = "asSj6Aq8kDg5FULShCKbjN"
 
 if (access_from_server == TRUE) {
-  
-  source(sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\02_Functions\access_kobo_api.r)", user_login))
-  df <- get_kobo_data(asset_id = "a38DR4AhAH2rDqP6e5YHLm")
+
+  df_raw <- get_kobo_data(un = username, asset_id = asset_id)
+  df <- df_raw %>%
+    dplyr::rename(
+      "survey_uuid" = "uuid",
+      "uuid" = "_uuid",
+      "idp_site" = "localisation_site",
+      `_observation_gps_latitude` = "observation_gps_latitude",
+      `_observation_gps_longitude` = "observation_gps_longitude",
+      `_observation_gps_altitude` = "observation_gps_altitude",
+      `_observation_gps_precision` = "observation_gps_precision"
+    )
   
   print("Kobo data successfully accessed from server")
   
 } else {
-  df <- readxl::read_excel(choose.files()) ###### remove this once no longer required ###############
-#  df <- readxl::read_excel(r"(input/SOM2204_CCCM_DSA_July.xlsx)") ###### remove this once no longer required ###############
-  district_file <- read.csv("input/idp_list.csv")
-  koboToolPath = sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Team - Displacement to Durable Solutions (DDS)\03_DDSU\SOMXX_DSA\02_Data_Collection\01_Tool/REACH_2024_SOM_DSA_Survey_Tool_VIII.xlsx)", user_login)
-  questions = import(koboToolPath,sheet="survey") %>% 
-    filter(!is.na(name))
-  choices = import(koboToolPath,sheet="choices")
-}
+  df <- readxl::read_excel(choose.files()) %>%
+    dplyr::rename(
+      "uuid" = "_uuid",
+      "idp_site" = "localisation_site")
+  #df <- readxl::read_excel(r"(input/DSA_VIII_Sample_Data.xlsx)") ###### remove this once no longer required ###############
+}  
+  
+
+district_file <- read.csv("input/idp_list.csv")
+koboToolPath = sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025\02_Data_Collection\01_Tool\REACH_2024_SOM_DSA_Survey_Tool_VIII.xlsx)", user_login)
+questions = import(koboToolPath,sheet="survey") %>% 
+  filter(!is.na(name))
+choices = import(koboToolPath,sheet="choices")
+
 
 ## read in site level data
 
-site_path <- sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Team - Displacement to Durable Solutions (DDS)\03_DDSU\SOMXX_DSA\01_Research_Design\Reference_Data\idp-site-master-list-sep-2024.xlsx)", user_login)
+site_path <- sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025\01_Research_Design\Reference_Data\idp-site-master-list-sep-2024.xlsx)", user_login)
 site_data <- read_excel(site_path, sheet = "Sites for Field") %>%
   mutate(District = str_to_title(District))
 
-df <- df %>%
-  dplyr::rename("uuid" = "_uuid",
-                "idp_site" = "localisation_site")
 
-
-
-## read in FO site and locations
-fo_base_assingment_str <- sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Team - Displacement to Durable Solutions (DDS)\03_DDSU\SOMXX_DSA\03_Data_Analysis\DSA_VIII_Scripts\input/Field team work distribution.xlsx)", user_login)
+## read in FO site and locations - this data is used to map the respective field officers to each district. 
+fo_base_assingment_str <- sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025\03_Data_Analysis\DSA_VIII_Scripts\input/Field team work distribution.xlsx)", user_login)
 fo_district_mapping <- read_excel(fo_base_assingment_str) %>%
   mutate(Locations = str_to_title(Locations))
 
@@ -100,63 +132,63 @@ df <- df %>%
 
 df <- df %>%
   mutate(referral_yn = case_when(
-    str_starts(referral_person, "Yes") ~ "Yes",
-    str_starts(referral_person, "No") ~ "No",
+    str_starts(referral_person, "y") ~ "Yes",
+    str_starts(referral_person, "n") ~ "No",
     TRUE ~ NA_character_
   ))
 
-
-dashboard <- df %>% select(start,end,audit,today,deviceid, Responsible_FO,	enum_name,	consent,	district_name,	localisation_region_label,	idp_code,	idp_site, idp_code_verification,
+## this is the dashboard data that we'll use to make the FO dashboard
+dashboard <- df %>% 
+  left_join(field_officer_location, by = join_by(idp_code == `CCCM IDP Site Code`)) %>%
+  select(start,end,audit,today,deviceid, Responsible_FO,	enum_name,	consent,	district_name,	localisation_region_label,	idp_code,	idp_site, idp_code_verification,
                            idp_code_districti_verification,	ki_role,	ki_role_other, ki_gender,	observation_faecalmatter,	observation_shelters_flood,
                            observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
                            observation_gps,	observation_gps,	`_observation_gps_latitude`,`_observation_gps_longitude`,
                            `_observation_gps_altitude`,`_observation_gps_precision`, `uuid`
 )
 
-
-
-write_csv(dashboard, "dashboard/dashboard_data.csv")
+write_csv(dashboard, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\Shiny\DSA_VIII_Monitoring\REACH_SOM_DSA_VIII_Field_Dashboard\data/dashboard_data.csv)", user_login))
 
 
 
 #############load datasets ##################
+print("Dashboard prepped")
 
 
 ## example date "2023-10-08T07:56:32"
 
-args <- commandArgs(trailingOnly = T)
-print(args)
-date_selection <- args[1]
-
-if (length(args) == 2) {
-  custom_date_option <- args[2]
-  }
+# args <- commandArgs(trailingOnly = T)
+# print(args)
+# date_selection <- args[1]
+# 
+# if (length(args) == 2) {
+#   custom_date_option <- args[2]
+#   }
 
 
 #if (dynamic_date) {
 #  date_selection <- menu(c("Yesterday's date", "Today's date", "Specific date"), 
 #                         title = "Choose the date for which you want to clean data", graphics = TRUE)
 if (dynamic_date) {
-  if (date_selection == "1" || date_selection == "yesterday") {
-    date_to_filter <- Sys.Date() - 1
-    message("You selected yesterday's date.")
-  } else if (date_selection == "today") {
-    date_to_filter <- Sys.Date()
-    message("You selected today's date.")
-  } else if (custom_date_option == 3) {
-    specific_date <- args[1]
-    date_to_filter <- as.Date(specific_date)
-    print("Date successfully filtered!")
-  } else {
-    stop("Invalid selection or exit chosen.")
-  }
+  # if (date_selection == "1" || date_selection == "yesterday") {
+  #   date_to_filter <- Sys.Date() - 1
+  #   message("You selected yesterday's date.")
+  # } else if (date_selection == "today") {
+  #   date_to_filter <- Sys.Date()
+  #   message("You selected today's date.")
+  # } else if (custom_date_option == 3) {
+  #   specific_date <- args[1]
+  #   date_to_filter <- as.Date(specific_date)
+  #   print("Date successfully filtered!")
+  # } else {
+  #   stop("Invalid selection or exit chosen.")
+  # }
   
-  print(date_to_filter)
 
   df <- df %>% 
     left_join(district_file, by = c("idp_code", "district_name")) %>%
     mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
-    filter(submission_date == date_to_filter) 
+    filter(submission_date == date_selection) 
   
   } else {
     
@@ -169,6 +201,8 @@ if (dynamic_date) {
 if (nrow(df) == 0) {
   stop("Data ingested is empty")
 }
+
+print("Data successfully filtered and prepared")
 
 Sys.sleep(0.5)
 
@@ -303,7 +337,7 @@ check_list <- data.frame(
 ############ data cleaning ############
 
 outlier_excluded_questions <- questions %>%
-  filter(type != 'integer') %>%
+  filter(type != 'integer') %>% 
   pull(name) %>%
   unique()
 
@@ -358,7 +392,7 @@ checked_data_by_fo <- group_by_fo %>%
                   columns_to_check = names(
                     df |>
                       dplyr::select(ends_with("_other")) |>
-                      dplyr::select(-contains("."))
+                      dplyr::select(-contains("/"))
                   )
                 ) %>%
                 check_value(
@@ -448,7 +482,7 @@ combined_clogs <- bind_rows(lapply(paste0("clogs/", xlsx_files), read_clogs))
 combined_clogs_distinct <- combined_clogs %>%
   select(-c(source_file)) %>%
   distinct()
-writexl::write_xlsx(combined_clogs_distinct, "dashboard/combined_clogs.xlsx")
+writexl::write_xlsx(combined_clogs_distinct, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\Shiny\DSA_VIII_Monitoring\REACH_SOM_DSA_VIII_Field_Dashboard\data/combined_clogs.xlsx)", user_login))
 
 
 
@@ -459,6 +493,9 @@ contact_data_by_fo <- group_by_fo %>%
   purrr::map(~ filter(., referral_yn == "Yes") %>%
                select(Responsible_FO, idp_code, ki_name, referral_name, referral_phone)
                )
+
+
+contact_data_by_fo <- Filter(function(x) nrow(x) > 0, contact_data_by_fo)
 
 ### make the file directories if required for the referrals
 #for (i in 1:nrow(FO_names)) {
