@@ -33,7 +33,7 @@ consent <- "consent"
 mindur <- 30
 maxdur <- 90
 
-dynamic_date <- TRUE
+dynamic_date <- FALSE
 access_from_server <- TRUE
 
 ###################################################
@@ -170,20 +170,6 @@ print("Dashboard prepped")
 #  date_selection <- menu(c("Yesterday's date", "Today's date", "Specific date"), 
 #                         title = "Choose the date for which you want to clean data", graphics = TRUE)
 if (dynamic_date) {
-  # if (date_selection == "1" || date_selection == "yesterday") {
-  #   date_to_filter <- Sys.Date() - 1
-  #   message("You selected yesterday's date.")
-  # } else if (date_selection == "today") {
-  #   date_to_filter <- Sys.Date()
-  #   message("You selected today's date.")
-  # } else if (custom_date_option == 3) {
-  #   specific_date <- args[1]
-  #   date_to_filter <- as.Date(specific_date)
-  #   print("Date successfully filtered!")
-  # } else {
-  #   stop("Invalid selection or exit chosen.")
-  # }
-  
 
   df <- df %>% 
     left_join(district_file, by = c("idp_code", "district_name")) %>%
