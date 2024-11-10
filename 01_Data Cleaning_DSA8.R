@@ -10,7 +10,9 @@ date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 
 if (!require("pacman")) install.packages("pacman")
-if (!require("robotoolbox")) remotes::install_gitlab("dickoa/robotoolbox")
+if (!require("robotoolbox")) remotes::install_gitlab("dickoa/robotoolbox") ## install if needed robotoolbox
+if (!require("robotoolbox")) remotes::install_gitlab("alex-stephenson/ImpactFunctions") ## install some key functions made for SOM REACH
+
 p_load(rio,
        tidyverse,
        koboquest,
@@ -33,17 +35,22 @@ consent <- "consent"
 mindur <- 30
 maxdur <- 90
 
+## Set this to TRUE if you want to select the date through the bat file. If FALSE you need to set the date in the script.
 dynamic_date <- FALSE
+## set this if you want to access the data from the server. If you are going to choose the file choose TRUE
 access_from_server <- TRUE
 
 ###################################################
 ###### STEP 2 - IMPORT DATA AND FUNCTIONS #########
 ###################################################
 
+#to make the scripts reusable relative file paths should be used
 user_login <- Sys.info()[["user"]]
 wd_path <- sprintf(r"(C:/Users/%s/ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025/03_Data_Analysis/DSA_VIII_Scripts)", user_login)
 setwd(wd_path)
 
+
+## get data input from the .BAT file we are using to run the script. 
 args <- commandArgs(trailingOnly = TRUE)
 
 # Parse args into a named list
@@ -67,6 +74,7 @@ print(paste("Date Selection:", date_selection))
 
 #asset_id = "asSj6Aq8kDg5FULShCKbjN"
 
+## call the function to access the kobo server using the credentials entered in the bat file, or the default ones if running locally.
 if (access_from_server == TRUE) {
 
   df_raw <- get_kobo_data(un = username, asset_id = asset_id)
@@ -79,7 +87,7 @@ if (access_from_server == TRUE) {
       `_observation_gps_longitude` = "observation_gps_longitude",
       `_observation_gps_altitude` = "observation_gps_altitude",
       `_observation_gps_precision` = "observation_gps_precision"
-    )
+    ) ## the data has slightly different namings when accessed via API, so standardise here so can be run both ways
   
   print("Kobo data successfully accessed from server")
   
@@ -91,7 +99,7 @@ if (access_from_server == TRUE) {
   #df <- readxl::read_excel(r"(input/DSA_VIII_Sample_Data.xlsx)") ###### remove this once no longer required ###############
 }  
   
-
+## read in survey data
 district_file <- read.csv("input/idp_list.csv")
 koboToolPath = sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025\02_Data_Collection\01_Tool\REACH_2024_SOM_DSA_Survey_Tool_VIII.xlsx)", user_login)
 questions = import(koboToolPath,sheet="survey") %>% 
@@ -100,7 +108,6 @@ choices = import(koboToolPath,sheet="choices")
 
 
 ## read in site level data
-
 site_path <- sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025\01_Research_Design\Reference_Data\idp-site-master-list-sep-2024.xlsx)", user_login)
 site_data <- read_excel(site_path, sheet = "Sites for Field") %>%
   mutate(District = str_to_title(District))
@@ -111,6 +118,7 @@ fo_base_assingment_str <- sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/
 fo_district_mapping <- read_excel(fo_base_assingment_str) %>%
   mutate(Locations = str_to_title(Locations))
 
+## join site data to field data
 field_officer_location <- site_data %>%
   left_join(fo_district_mapping, by = join_by("District" == "Locations")) %>%
   distinct(`CCCM IDP Site Code`, District, Responsible_FO) %>%
@@ -118,10 +126,10 @@ field_officer_location <- site_data %>%
          Responsible_FO = ifelse(Responsible_FO == "" | is.na(Responsible_FO), "No_FO", Responsible_FO)) %>%
   filter(!is.na(`CCCM IDP Site Code`))
   
-
+##rename any blank values 
 field_officer_location$Responsible_FO <- ifelse(field_officer_location$Responsible_FO == "" | is.na(field_officer_location$Responsible_FO), "No_FO", field_officer_location$Responsible_FO)
 
-
+## join the district name to the site df (in the responses it just has the district p code)
 df <- df %>%
   left_join(choices %>%
               filter(!is.na(region))  %>%
@@ -155,20 +163,8 @@ write_csv(dashboard, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_RE
 print("Dashboard prepped")
 
 
-## example date "2023-10-08T07:56:32"
 
-# args <- commandArgs(trailingOnly = T)
-# print(args)
-# date_selection <- args[1]
-# 
-# if (length(args) == 2) {
-#   custom_date_option <- args[2]
-#   }
-
-
-#if (dynamic_date) {
-#  date_selection <- menu(c("Yesterday's date", "Today's date", "Specific date"), 
-#                         title = "Choose the date for which you want to clean data", graphics = TRUE)
+## of you have selected the dynamic data, it will read it in from the bat input. If else it will be manually selected below. 
 if (dynamic_date) {
 
   df <- df %>% 
@@ -185,7 +181,7 @@ if (dynamic_date) {
   }
 
 if (nrow(df) == 0) {
-  stop("Data ingested is empty")
+  stop("Data ingested is empty. Did you select the right date?")
 }
 
 print("Data successfully filtered and prepared")
@@ -254,14 +250,19 @@ df <- time_check(df, time_min = mindur, time_max = maxdur)
 
 ########### code logical checks for the check_logical function call ##############
 
+## which IDP site has been visited > times
 n_occur_idp_code <- df %>%
   dplyr::count(idp_code) %>%
   filter(n > 4)
+
+## which IDP site has had a KI role > 1
 
 count_ki_roles_site <- df %>% 
   group_by(idp_code,ki_role) %>%
   dplyr::summarise(n=n()) %>%
   filter(n > 1)
+
+## create dataframe of all the checks we'll run
 
 check_list <- data.frame(
   name = c(
@@ -408,6 +409,7 @@ checked_data_by_fo <- group_by_fo %>%
 
 
 
+## produce cleaning logs
 cleaning_log <- checked_data_by_fo %>%
   purrr::map(~ .[] %>%
                create_combined_log() %>% 
@@ -421,6 +423,8 @@ cleaning_log <- checked_data_by_fo %>%
                )
   )
 
+## create folders for FOs if they don't exist (useful to automate this so it automatically happens if we add new FOs)
+
 FO_names <- field_officer_location %>% distinct(Responsible_FO) 
 
 for (i in 1:nrow(FO_names)) {
@@ -432,6 +436,7 @@ for (i in 1:nrow(FO_names)) {
   
 }
 
+## create the clogs
 cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[], 
                                                        cleaning_log_name = "cleaning_log",
                                                        change_type_col = "change_type",
@@ -474,13 +479,12 @@ writexl::write_xlsx(combined_clogs_distinct, sprintf(r"(C:\Users\%s\ACTED\IMPACT
 
 #each KI will be asked if they have other potential contacts for the DSA, those are grouped by FO similar to the clogs
 contact_data_by_fo <- group_by_fo %>%
-#  mutate(referral_yn = sample(c("yes", "no"), size = nrow(.), replace = TRUE)) %>%
   dplyr::group_split() %>%
   purrr::map(~ filter(., referral_yn == "Yes") %>%
                select(Responsible_FO, idp_code, ki_name, referral_name, referral_phone)
                )
 
-
+# remove the groups that don't have any values (only really needed at the start)
 contact_data_by_fo <- Filter(function(x) nrow(x) > 0, contact_data_by_fo)
 
 ### make the file directories if required for the referrals
