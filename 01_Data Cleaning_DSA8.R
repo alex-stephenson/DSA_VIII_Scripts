@@ -11,7 +11,7 @@ date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 if (!require("pacman")) install.packages("pacman")
 if (!require("robotoolbox")) remotes::install_gitlab("dickoa/robotoolbox") ## install if needed robotoolbox
-if (!require("robotoolbox")) remotes::install_gitlab("alex-stephenson/ImpactFunctions") ## install some key functions made for SOM REACH
+if (!require("ImpactFunctions")) remotes::install_github("alex-stephenson/ImpactFunctions") ## install some key functions made for SOM REACH
 
 p_load(rio,
        tidyverse,
@@ -36,9 +36,9 @@ mindur <- 30
 maxdur <- 90
 
 ## Set this to TRUE if you want to select the date through the bat file. If FALSE you need to set the date in the script.
-dynamic_date <- FALSE
+dynamic_date <- FALSE ## if false the date must be set in line 184
 ## set this if you want to access the data from the server. If you are going to choose the file choose TRUE
-access_from_server <- TRUE
+access_from_server <- TRUE ## if false the file will be manually selected
 
 ###################################################
 ###### STEP 2 - IMPORT DATA AND FUNCTIONS #########
@@ -72,7 +72,9 @@ print(paste("Username:", username))
 print(paste("Asset ID:", asset_id))
 print(paste("Date Selection:", date_selection))
 
-#asset_id = "asSj6Aq8kDg5FULShCKbjN"
+if (access_from_server == TRUE) {
+  print("Accessing from server...")
+}
 
 ## call the function to access the kobo server using the credentials entered in the bat file, or the default ones if running locally.
 if (access_from_server == TRUE) {
@@ -83,10 +85,10 @@ if (access_from_server == TRUE) {
       "survey_uuid" = "uuid",
       "uuid" = "_uuid",
       "idp_site" = "localisation_site",
-      `_observation_gps_latitude` = "observation_gps_latitude",
-      `_observation_gps_longitude` = "observation_gps_longitude",
-      `_observation_gps_altitude` = "observation_gps_altitude",
-      `_observation_gps_precision` = "observation_gps_precision"
+      `_observation_gps_latitude` = "geopoint_latitude",
+      `_observation_gps_longitude` = "geopoint_longitude",
+      `_observation_gps_altitude` = "geopoint_altitude",
+      `_observation_gps_precision` = "geopoint_precision"
     ) ## the data has slightly different namings when accessed via API, so standardise here so can be run both ways
   
   print("Kobo data successfully accessed from server")
@@ -98,7 +100,40 @@ if (access_from_server == TRUE) {
       "idp_site" = "localisation_site")
   #df <- readxl::read_excel(r"(input/DSA_VIII_Sample_Data.xlsx)") ###### remove this once no longer required ###############
 }  
+
   
+df <- df %>%
+  mutate(
+    idp_code = case_when(
+      # Apply the first condition to add "2023-" prefix when date is 12/11/2024 and region is "Banadir"
+      today == as.Date("2024-11-12") & localisation_region == "SO22" ~ str_replace(idp_code, "^CCCM-", "CCCM-2023-"),
+      
+      # Apply the second condition to replace "2023" with "2023(U)" for specified site codes
+      idp_code %in% c("CCCM-2023-SO220117-0353", "CCCM-2023-SO220117-0404", 
+                                  "CCCM-2023-SO220117-0382", "CCCM-2023-SO220117-0383", 
+                                  "CCCM-2023-SO220117-0394", "CCCM-2023-SO220117-0414") ~ str_replace(idp_code, "2023", "2023(U)"),
+      
+      # Otherwise, retain original values
+      TRUE ~ idp_code
+    ),
+    nfi_access_dist_min_int_male = case_when(
+      nfi_access_distance_min_male == 'less_15' ~ 0,
+      nfi_access_distance_min_male == '15_30' ~ 15,
+      nfi_access_distance_min_male == '31_60' ~ 31,
+      nfi_access_distance_min_male == 'more_60' ~ 60,
+      TRUE ~ 999
+    ),
+    nfi_access_dist_min_int_female = case_when(
+      nfi_access_distance_min_fem == 'less_15' ~ 0,
+      nfi_access_distance_min_fem == '15_30' ~ 15,
+      nfi_access_distance_min_fem == '31_60' ~ 31,
+      nfi_access_distance_min_fem == 'more_60' ~ 60,
+      TRUE ~ 999
+    )
+  )
+
+
+
 ## read in survey data
 district_file <- read.csv("input/idp_list.csv")
 koboToolPath = sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025\02_Data_Collection\01_Tool\REACH_2024_SOM_DSA_Survey_Tool_VIII.xlsx)", user_login)
@@ -151,7 +186,7 @@ dashboard <- df %>%
   select(start,end,audit,today,deviceid, Responsible_FO,	enum_name,	consent,	district_name,	localisation_region_label,	idp_code,	idp_site, idp_code_verification,
                            idp_code_districti_verification,	ki_role,	ki_role_other, ki_gender,	observation_faecalmatter,	observation_shelters_flood,
                            observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
-                           observation_gps,	observation_gps,	`_observation_gps_latitude`,`_observation_gps_longitude`,
+                          `_observation_gps_latitude`,`_observation_gps_longitude`,
                            `_observation_gps_altitude`,`_observation_gps_precision`, `uuid`
 )
 
@@ -177,7 +212,7 @@ if (dynamic_date) {
     df <- df %>% 
       left_join(district_file, by = c("idp_code", "district_name")) %>%
       mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
-      filter(submission_date == "2024-10-21") 
+      filter(submission_date == "2024-11-12") 
   }
 
 if (nrow(df) == 0) {
@@ -387,19 +422,18 @@ checked_data_by_fo <- group_by_fo %>%
                   element_name = "checked_dataset",
                   values_to_look = c(999, 9999)
                 ) %>%
-               check_outliers(
-                 uuid_column = "uuid",
-                 element_name = "checked_dataset",
-                 kobo_survey = questions,
-                 kobo_choices = choices,
-                 cols_to_add_cleaning_log = NULL,
-                 strongness_factor = 3,
-                 minimum_unique_value_of_variable = NULL,
-                 remove_choice_multiple = TRUE,
-                 sm_separator = "/",
-                 columns_not_to_check = NULL
-#ADD WITH PROPER DATA                 columns_not_to_check = c(excluded_questions_in_data, "interview_duration", "CHECK_interview_duration", "_gps_latitude","_gps_longitude","_gps_altitude","_gps_precision","_id","_index")
-                ) %>%
+               # check_outliers(
+               #   uuid_column = "uuid",
+               #   element_name = "checked_dataset",
+               #   kobo_survey = questions,
+               #   kobo_choices = choices,
+               #   cols_to_add_cleaning_log = NULL,
+               #   strongness_factor = 3,
+               #   minimum_unique_value_of_variable = 10,
+               #   remove_choice_multiple = TRUE,
+               #   sm_separator = "/",
+               #   columns_not_to_check = c(excluded_questions_in_data, "interview_duration", "CHECK_interview_duration", "_observation_gps_altitude","_observation_gps_precision","_observation_gps_longitude","_observation_gps_latitude","_id")
+               #  ) %>%
                check_logical_with_list(list_of_check = check_list,
                                        check_id_column = "name",
                                        check_to_perform_column = "check",
@@ -544,14 +578,27 @@ purrr::walk(contact_data_by_fo, ~ {
 
 #### Write Geo spatial checks
 
-source("03_Geo_Checks.R")
+source("03_Geo_Checks.R") 
 
 ### add KI data
 
-source("02_KI_Database.R")
+ImpactFunctions::update_ki_database(
+  data = df,
+  date = "today",
+  district = "district_name",
+  region = "localisation_region_label",
+  idp_site = "IDP_Site",
+  ki_name = "ki_name",
+  ki_age = "ki_age",
+  ki_role = "ki_role",
+  ki_status = "ki_status",
+  ki_contact = "ki_contact",
+  FieldOfficer = "Responsible_FO",
+  r_c = "DSA_08"
+)
 
 ## script close graphic
 
-source("05_script_close_graphic.R")
+#source("05_script_close_graphic.R")
                                                                                
                                                                                                   
