@@ -98,7 +98,6 @@ if (access_from_server == TRUE) {
     dplyr::rename(
       "uuid" = "_uuid",
       "idp_site" = "localisation_site")
-  #df <- readxl::read_excel(r"(input/DSA_VIII_Sample_Data.xlsx)") ###### remove this once no longer required ###############
 }  
 
   
@@ -135,7 +134,7 @@ df <- df %>%
 
 
 ## read in survey data
-district_file <- read.csv("input/idp_list.csv")
+#district_file <- read.csv("input/idp_list_OLD_INCORRECT.csv")
 koboToolPath = sprintf(r"(C:\Users\%s\ACTED/IMPACT SOM - 02_Research/01_REACH/2024_25/03_DDSU/SOM2204 _DSA VIII 2025\02_Data_Collection\01_Tool\REACH_2024_SOM_DSA_Survey_Tool_VIII.xlsx)", user_login)
 questions = import(koboToolPath,sheet="survey") %>% 
   filter(!is.na(name))
@@ -202,17 +201,17 @@ print("Dashboard prepped")
 ## of you have selected the dynamic data, it will read it in from the bat input. If else it will be manually selected below. 
 if (dynamic_date) {
 
-  df <- df %>% 
-    left_join(district_file, by = c("idp_code", "district_name")) %>%
+  df_check <- df %>% 
+#    left_join(district_file, by = c("idp_code", "district_name")) %>%
     mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
     filter(submission_date == date_selection) 
   
   } else {
     
     df <- df %>% 
-      left_join(district_file, by = c("idp_code", "district_name")) %>%
+ #     left_join(district_file, by = c("idp_code", "district_name")) %>%
       mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
-      filter(submission_date == "2024-11-12") 
+      filter(submission_date == "2024-11-13") 
   }
 
 if (nrow(df) == 0) {
@@ -582,20 +581,20 @@ source("03_Geo_Checks.R")
 
 ### add KI data
 
-ImpactFunctions::update_ki_database(
-  data = df,
-  date = "today",
-  district = "district_name",
-  region = "localisation_region_label",
-  idp_site = "IDP_Site",
-  ki_name = "ki_name",
-  ki_age = "ki_age",
-  ki_role = "ki_role",
-  ki_status = "ki_status",
-  ki_contact = "ki_contact",
-  FieldOfficer = "Responsible_FO",
-  r_c = "DSA_08"
-)
+# ImpactFunctions::update_ki_database(
+#   data = df,
+#   date = "today",
+#   district = "district_name",
+#   region = "localisation_region_label",
+#   idp_site = "IDP_Site",
+#   ki_name = "ki_name",
+#   ki_age = "ki_age",
+#   ki_role = "ki_role",
+#   ki_status = "ki_status",
+#   ki_contact = "ki_contact",
+#   FieldOfficer = "Responsible_FO",
+#   r_c = "DSA_08"
+# )
 
 ## script close graphic
 
