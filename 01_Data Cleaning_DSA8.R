@@ -1,7 +1,6 @@
-################## DSA VIII SCRIPT ##############
+################## DSA VIII SCRIPT ############## 
 
-
-# SECTION 1 LOAD PACKAGES AND HARD CODE VARIABLES 
+# SECTION 1 LOAD PACKAGES AND HARD CODE VARIABLES TEST FROM SULAIMAN'S ACCOUNT
 
 
 rm(list = ls())
