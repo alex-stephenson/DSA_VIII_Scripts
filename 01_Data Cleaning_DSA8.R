@@ -19,20 +19,27 @@ p_load(rio,
        sjmisc,
        keyring)
 # load packages
-library(openxlsx, quietly = T)
 library(cleaninginspectoR, quietly = T)
 library(koboAPI, quietly = T)
-library(openxlsx, quietly = T)
-library(readxl, quietly = T)
-library(kableExtra, quietly = T)
 library(cleaningtools, quietly = T)
 library(robotoolbox, quietly = T)
 library(ImpactFunctions)
-
+library(openxlsx)
+library(readxl)
+library(dplyr)
+# library(butteR)
+library(data.table)
+library(stringr)
+library(stringi)
+library(lubridate)
+library(DT)
+library(kableExtra)
+library(ggplot2)
+library(purrr)
 ## Hard code values
 consent <- "consent"
-mindur <- 30
-maxdur <- 90
+mindur <- 25
+maxdur <- 120
 
 ## Set this to TRUE if you want to select the date through the bat file. If FALSE you need to set the date in the script.
 dynamic_date <- FALSE ## if false the date must be set in line 184
@@ -84,10 +91,10 @@ if (access_from_server == TRUE) {
       "survey_uuid" = "uuid",
       "uuid" = "_uuid",
       "idp_site" = "localisation_site",
-      `_observation_gps_latitude` = "geopoint_latitude",
-      `_observation_gps_longitude` = "geopoint_longitude",
-      `_observation_gps_altitude` = "geopoint_altitude",
-      `_observation_gps_precision` = "geopoint_precision"
+      # `_observation_gps_latitude` = "geopoint_latitude",
+      # `_observation_gps_longitude` = "geopoint_longitude",
+      # `_observation_gps_altitude` = "geopoint_altitude",
+      # `_observation_gps_precision` = "geopoint_precision"
     ) ## the data has slightly different namings when accessed via API, so standardise here so can be run both ways
   
   print("Kobo data successfully accessed from server")
@@ -114,6 +121,16 @@ df <- df %>%
       # Otherwise, retain original values
       TRUE ~ idp_code
     ),
+    nfi_access_distance_min_fem = case_when(
+      nfi_access_distance_min_fem == "1530" ~ "15_30",
+      nfi_access_distance_min_fem == "3160" ~ "31_60",
+      TRUE ~ nfi_access_distance_min_fem
+    ),
+    nfi_access_distance_min_male = case_when(
+      nfi_access_distance_min_male == "1530" ~ "15_30",
+      nfi_access_distance_min_male == "3160" ~ "31_60",
+      TRUE ~ nfi_access_distance_min_male
+    ),
     nfi_access_dist_min_int_male = case_when(
       nfi_access_distance_min_male == 'less_15' ~ 0,
       nfi_access_distance_min_male == '15_30' ~ 15,
@@ -130,7 +147,7 @@ df <- df %>%
     )
   )
 
-
+df$duration_site_established_in_months <- as.integer(df$duration_site_established_in_months)
 
 ## read in survey data
 #district_file <- read.csv("input/idp_list_OLD_INCORRECT.csv")
@@ -178,44 +195,31 @@ df <- df %>%
     TRUE ~ NA_character_
   ))
 
-## this is the dashboard data that we'll use to make the FO dashboard
-dashboard <- df %>% 
-  left_join(field_officer_location, by = join_by(idp_code == `CCCM IDP Site Code`)) %>%
-  select(start,end,audit,today,deviceid, Responsible_FO,	enum_name,	consent,	district_name,	localisation_region_label,	idp_code,	idp_site, idp_code_verification,
-                           idp_code_districti_verification,	ki_role,	ki_role_other, ki_gender,	observation_faecalmatter,	observation_shelters_flood,
-                           observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
-                          `_observation_gps_latitude`,`_observation_gps_longitude`,
-                           `_observation_gps_altitude`,`_observation_gps_precision`, `uuid`
-)
 
-write_csv(dashboard, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\Shiny\DSA_VIII_Monitoring\REACH_SOM_DSA_VIII_Field_Dashboard\data/dashboard_data.csv)", user_login))
-
-
-
-#############load datasets ##################
-print("Dashboard prepped")
-
-
+df <- df %>% filter(today >= as.Date("2024-11-12"))  
 
 ## of you have selected the dynamic data, it will read it in from the bat input. If else it will be manually selected below. 
-if (dynamic_date) {
-
-  df_check <- df %>% 
-#    left_join(district_file, by = c("idp_code", "district_name")) %>%
-    mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
-    filter(submission_date == date_selection) 
-  
-  } else {
-    
-    df <- df %>% 
- #     left_join(district_file, by = c("idp_code", "district_name")) %>%
-      mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
-      filter(submission_date == "2024-11-13") 
-  }
-
-if (nrow(df) == 0) {
-  stop("Data ingested is empty. Did you select the right date?")
-}
+# if (dynamic_date) {
+# 
+#   df_check <- df %>% 
+# #    left_join(district_file, by = c("idp_code", "district_name")) %>%
+#     mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
+#     filter(submission_date == date_selection) 
+#   
+#   } else {
+#     
+#     df <- df %>% 
+#  #     left_join(district_file, by = c("idp_code", "district_name")) %>%
+#       mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
+#       filter(submission_date == "2024-11-13") 
+#   }
+# 
+# if (nrow(df) == 0) {
+#   stop("Data ingested is empty. Did you select the right date?")
+# }
+# }
+df <- df |> mutate(submission_date = format(ymd_hms(`_submission_time`), "%Y-%m-%d")) %>%
+  filter(today >= as.Date("2024-11-12")) 
 
 print("Data successfully filtered and prepared")
 
@@ -278,6 +282,78 @@ df <- time_check(df, time_min = mindur, time_max = maxdur)
 
 
 "%!in%" <- Negate("%in%")
+
+############################## time check by audit file
+
+df <- df |>
+  dplyr::rename(
+    interview_duration_start_end = interview_duration,
+    CHECK_interview_duration_start_end = CHECK_interview_duration
+  )
+
+### time check based on audit files ####
+audit_file_dir = "C:/Users/sulai/ACTED/IMPACT SOM - KenSom GIS and DATA team - 01_DSA/REACH_SOM_DSA_VIII/audit_files/"
+
+time_min <- 25
+time_max <- 120
+
+df <- check_int_duration(df_raw = df, x_uuid="uuid", audit_dir_path = audit_file_dir, today = "today")
+
+df$interview_duration <- as.numeric(df$interview_duration)
+
+if ("interview_duration" %in% names(df)) {
+  # classifying interview duration validity using interview duration
+  df$interview_duration <- df$interview_duration %>% unlist()
+  
+  # classifying interview duration into categories
+  df <- df %>% 
+    mutate(CHECK_interview_duration = case_when(
+      interview_duration < time_min ~ "Too short",
+      interview_duration > time_max ~ "Too long",
+      TRUE ~ "Okay"
+    ),
+    time_validity = case_when(
+      CHECK_interview_duration %in% c("Too short", "Too long") ~ "Deleted",
+      TRUE ~ "Valid"
+    ),
+    
+    short_interview = case_when(
+      time_validity == "Deleted" & interview_duration < time_min  ~ "Deleted",
+      TRUE ~ "Okay"
+    ),
+    
+    long_interview = case_when(
+      time_validity == "Deleted" & interview_duration > time_max ~ "Deleted",
+      TRUE ~ "Okay"
+    ))
+  
+} else {
+  stop("Calculating Interview duration was unsuccessful!")
+}
+
+table(df$CHECK_interview_duration)
+table(df$CHECK_interview_duration_start_end)
+df$validity <- "Okay"
+
+df$validity[df$CHECK_interview_duration == "Too short"] <- "invalid"
+df$validity[df$CHECK_interview_duration == "Too long"] <- "invalid"
+
+## this is the dashboard data that we'll use to make the FO dashboard
+dashboard <- df %>% 
+  left_join(field_officer_location, by = join_by(idp_code == `CCCM IDP Site Code`)) %>%
+  select(start,end,today,deviceid, Responsible_FO,	enum_name,	consent,	district_name,	localisation_region_label,	idp_code,	idp_site, idp_code_verification,
+         idp_code_districti_verification,	ki_role,	ki_role_other, ki_gender,	observation_faecalmatter,	observation_shelters_flood,
+         observation_publiclighting,	observation_sufficient_space,	observation_main_secondary_accessroad,
+         ,geopoint, `_geopoint_latitude`, `_geopoint_longitude`, `_geopoint_altitude`, `_geopoint_precision`,
+         ,validity,interview_duration_start_end,interview_duration, `uuid`
+  )
+
+write_csv(dashboard, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\Shiny\DSA_VIII_Monitoring\REACH_SOM_DSA_VIII_Field_Dashboard\data/dashboard_data.csv)", user_login))
+
+
+
+#############load datasets ##################
+print("Dashboard prepped")
 
 
 
@@ -374,9 +450,12 @@ df$Responsible_FO <- ifelse(df$Responsible_FO == "" | is.na(df$Responsible_FO), 
 #             '_observation_gps_precision',
 #             '_observation_gps_latitude', '_observation_gps_longitude', '_observation_gps_altitude'))
 
+yesterday_df <- read_xlsx("../01_DSA_III_Download_Data/raw_data/DSA_2024_REACH_SOM_-_all_versions_-_False_-_2024-11-25-05-24-50.xlsx")
+
+recent_df <- df |> filter(!uuid %in% yesterday_df$`_uuid`)
 
 
-group_by_fo <- df %>%
+group_by_fo <- recent_df %>%
   dplyr::group_by(Responsible_FO)
 
 checked_data_by_fo <- group_by_fo %>%
@@ -392,8 +471,8 @@ checked_data_by_fo <- group_by_fo %>%
                   column_to_check = "interview_duration",
                   uuid_column = "uuid",
                   log_name = "duration_log",
-                  lower_bound = 30,
-                  higher_bound = 90
+                  lower_bound = 25,
+                  higher_bound = 120
                 ) %>%
                 check_duplicate(uuid_column = "uuid") %>%
                # check_soft_duplicates(
@@ -449,15 +528,34 @@ cleaning_log <- checked_data_by_fo %>%
                  list_of_log = .,
                  dataset = "checked_dataset",
                  cleaning_log = "cleaning_log",
-                 information_to_add = c("idp_code", "enum_name",  "district_name", "ki_contact", "ki_name","Responsible_FO")
+                 information_to_add = c("idp_code", "enum_name",  "district_name", "ki_contact", "ki_name","Responsible_FO", "Responsible_FO", "today")
 #                 information_to_add = c("settlement", "district", "enum_code", "ki_name", "ki_phone_number", "comment")
     
                )
   )
 
+for (k in seq_along(cleaning_log)) {  
+  clog <- cleaning_log[[k]][[2]]  
+  
+  clog$Field_SFO_Comment <- NA
+  
+  clog$new_value <- as.character(clog$new_value)
+  
+  cleaning_log[[k]][[2]] <- clog  
+}
+
+for (l in seq_along(cleaning_log)) {  
+  clog <- cleaning_log[[l]][[2]]  
+  
+  clog <- clog |> filter(issue %nin% c("outlier (normal distribution)", "outlier (log distribution)"))
+  
+  cleaning_log[[l]][[2]] <- clog  
+} 
+
 ## create folders for FOs if they don't exist (useful to automate this so it automatically happens if we add new FOs)
 
 FO_names <- field_officer_location %>% distinct(Responsible_FO) 
+FO_names[nrow(FO_names) + 1, ] <- "No_FO"
 
 for (i in 1:nrow(FO_names)) {
   dir_path <- paste0("clogs/", FO_names[i, 1])
@@ -504,7 +602,9 @@ combined_clogs <- bind_rows(lapply(paste0("clogs/", xlsx_files), read_clogs))
 
 combined_clogs_distinct <- combined_clogs %>%
   select(-c(source_file)) %>%
+  filter(issue %nin% c("outlier (normal distribution)", "outlier (log distribution)")) |> 
   distinct()
+
 writexl::write_xlsx(combined_clogs_distinct, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\Shiny\DSA_VIII_Monitoring\REACH_SOM_DSA_VIII_Field_Dashboard\data/combined_clogs.xlsx)", user_login))
 
 
