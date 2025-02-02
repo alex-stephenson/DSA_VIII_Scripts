@@ -1,6 +1,6 @@
 ### this file is designed to be called from 01_Data Cleaning_DSA8.R
 
-current_KI_db <- read_xlsx(sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\10_Common files\KI_Database\KI_Contact_List.xlsx)", user_login))
+current_KI_db <- read_xlsx(sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - Data Team\10_Common files\KI_Database\KI_Contact_List.xlsx)", user_login))
 
 KI_db <- df %>%
   filter(future_rc_consent == "yes") %>%
@@ -46,4 +46,4 @@ headerStyle <- createStyle(
 addStyle(KI_wb, sheet = "KI_database", style = headerStyle, rows = 1, cols = 1:ncol(appended_db), gridExpand = TRUE)
 
 # Save the workbook to an Excel file
-saveWorkbook(KI_wb, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - 02_Research\01_REACH\Data Team\10_Common files\KI_Database\KI_Contact_List.xlsx)", user_login), overwrite = TRUE)
+saveWorkbook(KI_wb, sprintf(r"(C:\Users\%s\ACTED\IMPACT SOM - Data Team\10_Common files\KI_Database\KI_Contact_List_update.xlsx)", user_login), overwrite = TRUE)
