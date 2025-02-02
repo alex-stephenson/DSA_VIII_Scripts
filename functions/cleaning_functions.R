@@ -194,6 +194,7 @@ check_int_duration <- function(df_raw, x_uuid="_uuid", audit_dir_path = "", toda
             # df <- df %>% filter(df$event != "group questions")
             df <- df %>% filter(node != "") %>% 
               # filter(event != "group questions") %>% 
+              filter(!str_detect(node, "geopoint"))%>% 
               mutate(
                 is_duplicate = start == lag(start),
                 time = (end - start) / 60000
